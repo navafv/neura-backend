@@ -7,15 +7,26 @@ class Event(models.Model):
     date = models.DateTimeField()
     location = models.CharField(max_length=255, default="Main Auditorium")
     image = models.ImageField(upload_to='events/', null=True, blank=True)
-    is_fest_event = models.BooleanField(default=False) # True if part of the IT Fest
+    is_fest_event = models.BooleanField(default=False)
 
     def __str__(self):
         return self.title
 
+class Participant(models.Model):
+    name = models.CharField(max_length=100)
+    email = models.EmailField()
+    phone = models.CharField(max_length=15)
+    college = models.CharField(max_length=200)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
+    registered_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} - {self.event.title}"
+
 class Leaderboard(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='winners')
     participant_name = models.CharField(max_length=100)
-    rank = models.IntegerField() # 1 for 1st place, etc.
+    rank = models.IntegerField() 
     points = models.IntegerField(default=0)
 
 class Gallery(models.Model):
