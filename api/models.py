@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
 
 class Event(models.Model):
     title = models.CharField(max_length=200)
@@ -7,7 +8,13 @@ class Event(models.Model):
     date = models.DateTimeField()
     location = models.CharField(max_length=255, default="Main Auditorium")
     image = models.ImageField(upload_to='events/', null=True, blank=True)
+    pdf_resource = models.FileField(upload_to='event_pdfs/', null=True, blank=True) 
     is_fest_event = models.BooleanField(default=False)
+    max_participants = models.PositiveIntegerField(default=100) 
+
+    @property
+    def is_registration_open(self):
+        return timezone.now() < self.date
 
     def __str__(self):
         return self.title
