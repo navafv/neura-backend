@@ -1,13 +1,13 @@
 from django.db import models
-from django.contrib.auth.models import User
 from django.utils import timezone
+from django_resized import ResizedImageField
 
 class Event(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     date = models.DateTimeField()
     location = models.CharField(max_length=255, default="Main Auditorium")
-    image = models.ImageField(upload_to='events/', null=True, blank=True)
+    image = ResizedImageField(size=[800, 600], quality=75, upload_to='events/', blank=True, null=True)
     pdf_resource = models.FileField(upload_to='event_pdfs/', null=True, blank=True) 
     is_fest_event = models.BooleanField(default=False)
     max_participants = models.PositiveIntegerField(default=100) 
@@ -26,7 +26,9 @@ class Participant(models.Model):
     college = models.CharField(max_length=200)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
     registered_at = models.DateTimeField(auto_now_add=True)
-    certificate = models.FileField(upload_to='certificates/', null=True, blank=True)
+    attended = models.BooleanField(default=False) 
+    qr_code = models.ImageField(upload_to='qr_codes/', blank=True, null=True) 
+    certificate = models.FileField(upload_to='certificates/', blank=True, null=True)
 
     def __str__(self):
         return f"{self.name} - {self.event.title}"
