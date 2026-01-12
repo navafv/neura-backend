@@ -5,13 +5,14 @@ from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from api.views import (
     EventViewSet, FeedbackViewSet, GalleryViewSet, 
-    ParticipantViewSet, FestViewSet, UserViewSet, TeamMemberViewSet, current_user
+    ParticipantViewSet, FestViewSet, UserViewSet, TeamMemberViewSet, EventRoundViewSet, current_user
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 router = DefaultRouter()
 router.register(r'events', EventViewSet)
+router.register(r'rounds', EventRoundViewSet)
 router.register(r'fests', FestViewSet)
 router.register(r'feedback', FeedbackViewSet)
 router.register(r'gallery', GalleryViewSet)

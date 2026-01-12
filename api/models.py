@@ -25,6 +25,7 @@ class Event(models.Model):
     min_team_size = models.IntegerField(default=1)
     max_team_size = models.IntegerField(default=1)
     max_participants = models.PositiveIntegerField(default=100)
+    results_published = models.BooleanField(default=False)
 
     @property
     def is_registration_open(self):
@@ -79,7 +80,7 @@ class TeamMember(models.Model):
     name = models.CharField(max_length=100)
     role = models.CharField(max_length=100)
     image = models.ImageField(upload_to='team/', blank=True, null=True)
-    order = models.IntegerField(default=0, help_text="Lower number appears first")
+    order = models.IntegerField(default=0)
 
     class Meta:
         ordering = ['order']

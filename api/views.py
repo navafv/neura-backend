@@ -1,6 +1,7 @@
 import io
+import csv
+from django.http import HttpResponse
 from django.core.files.base import ContentFile
-from django.core.mail import send_mail
 from django.contrib.auth.models import User
 from rest_framework import viewsets, permissions, filters
 from rest_framework.decorators import action, api_view, permission_classes
@@ -8,7 +9,7 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import landscape, letter
-from .models import Event, Participant, Gallery, Feedback, Fest, TeamMember
+from .models import Event, Participant, Gallery, Feedback, Fest, TeamMember, EventRound
 from .serializers import *
 from .permissions import IsCoordinatorOrReadOnly
 
@@ -50,6 +51,14 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def results(self, request, pk=None):
         event = self.get_object()
+        # Only show results if published OR if the requester is the coordinator/admin
+        if not event.results_published:
+             # Check permissions if not published
+             if not request.user.is_authenticated:
+                 return Response({"detail": "Results not yet published"}, status=403)
+             if not request.user.is_superuser and request.user != event.coordinator:
+                 return Response({"detail": "Results not yet published"}, status=403)
+
         winners = event.registrations.filter(is_winner=True).order_by('rank')
         return Response(ParticipantSerializer(winners, many=True).data)
 
@@ -65,6 +74,26 @@ class EventViewSet(viewsets.ModelViewSet):
             "rounds_config": EventRoundSerializer(event.rounds.all(), many=True).data,
             "participants": ParticipantSerializer(participants, many=True).data
         })
+
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def export_registrations(self, request, pk=None):
+        event = self.get_object()
+        if request.user != event.coordinator and not request.user.is_superuser:
+            return Response({"error": "Unauthorized"}, status=403)
+        
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="{event.title}_registrations.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['ID', 'Name', 'Team Name', 'Email', 'Phone', 'College', 'Attended', 'Current Round', 'Rank', 'Winner'])
+
+        for p in event.registrations.all():
+            writer.writerow([
+                p.id, p.name, p.team_name or "N/A", p.email, p.phone, p.college,
+                "Yes" if p.attended else "No", p.current_round, p.rank or "-", "Yes" if p.is_winner else "No"
+            ])
+
+        return response
 
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def generate_certificates(self, request, pk=None):
@@ -124,6 +153,22 @@ class ParticipantViewSet(viewsets.ModelViewSet):
         p.is_winner = True
         p.save()
         return Response({"status": "Rank updated"})
+    
+    @action(detail=True, methods=['patch'])
+    def toggle_attendance(self, request, pk=None):
+        p = self.get_object()
+        p.attended = not p.attended
+        p.save()
+        return Response({"status": "Attendance updated", "attended": p.attended})
+
+class EventRoundViewSet(viewsets.ModelViewSet):
+    queryset = EventRound.objects.all()
+    serializer_class = EventRoundSerializer
+    permission_classes = [permissions.IsAuthenticated, IsCoordinatorOrReadOnly]
+
+    def get_queryset(self):
+        # Optional: restrict to coordinator's events if needed, but simple filtering is fine
+        return super().get_queryset()
 
 class GalleryViewSet(viewsets.ModelViewSet):
     queryset = Gallery.objects.all().order_by('-uploaded_at')

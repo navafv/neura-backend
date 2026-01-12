@@ -11,7 +11,7 @@ class UserSerializer(serializers.ModelSerializer):
 class EventRoundSerializer(serializers.ModelSerializer):
     class Meta:
         model = EventRound
-        fields = ['id', 'round_number', 'name', 'selection_limit']
+        fields = ['id', 'event', 'round_number', 'name', 'selection_limit']
 
 class EventSerializer(serializers.ModelSerializer):
     rounds = EventRoundSerializer(many=True, read_only=True)
