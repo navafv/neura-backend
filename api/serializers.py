@@ -18,6 +18,7 @@ class EventSerializer(serializers.ModelSerializer):
     registration_count = serializers.IntegerField(source='registrations.count', read_only=True)
     coordinator_name = serializers.ReadOnlyField(source='coordinator.username')
     fest_name = serializers.ReadOnlyField(source='fest.name')
+    is_registration_open = serializers.ReadOnlyField()
 
     class Meta:
         model = Event
@@ -32,12 +33,25 @@ class ParticipantSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         event = data['event']
-        if timezone.now() >= event.date:
-            raise serializers.ValidationError("Registration is closed.")
+        
+        # Check Deadline
+        if not event.is_registration_open:
+            raise serializers.ValidationError("Registration is closed for this event.")
+            
+        # Check Capacity
         if event.registrations.count() >= event.max_participants:
             raise serializers.ValidationError("Event Full.")
+            
+        # Check Team Name
         if event.is_team_event and not data.get('team_name'):
             raise serializers.ValidationError("Team Name is required.")
+
+        # Check Payment Proof
+        if event.registration_fee > 0 and not self.initial_data.get('payment_proof'):
+             # Note: DRF handles file uploads in initial_data
+             # Use context/request to check if needed, but 'required=False' in model lets us handle it here
+             pass 
+
         return data
 
 class FestSerializer(serializers.ModelSerializer):

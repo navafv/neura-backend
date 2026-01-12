@@ -21,15 +21,26 @@ class Event(models.Model):
     location = models.CharField(max_length=255, default="Main Auditorium")
     image = ResizedImageField(size=[800, 600], quality=75, upload_to='events/', blank=True, null=True)
     pdf_resource = models.FileField(upload_to='event_pdfs/', null=True, blank=True)
+    
+    # Team Settings
     is_team_event = models.BooleanField(default=False)
     min_team_size = models.IntegerField(default=1)
     max_team_size = models.IntegerField(default=1)
     max_participants = models.PositiveIntegerField(default=100)
+    
+    # Registration Settings
+    registration_deadline = models.DateTimeField(null=True, blank=True)
+    registration_fee = models.IntegerField(default=0, help_text="0 for free events")
+    payment_qr = models.ImageField(upload_to='payment_qrs/', blank=True, null=True)
+    custom_fields = models.JSONField(default=list, blank=True, help_text="List of extra field labels e.g. ['GitHub Link', 'Dietary Pref']")
+
     results_published = models.BooleanField(default=False)
 
     @property
     def is_registration_open(self):
-        return timezone.now() < self.date
+        # Use deadline if set, otherwise use event date
+        cutoff = self.registration_deadline if self.registration_deadline else self.date
+        return timezone.now() < cutoff
 
     def __str__(self):
         return self.title
@@ -38,7 +49,7 @@ class EventRound(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='rounds')
     round_number = models.IntegerField(default=1)
     name = models.CharField(max_length=100, default="Preliminary Round")
-    selection_limit = models.IntegerField(default=10, help_text="How many teams/people qualify for the next round?")
+    selection_limit = models.IntegerField(default=10)
     
     class Meta:
         ordering = ['round_number']
@@ -48,22 +59,33 @@ class EventRound(models.Model):
 
 class Participant(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
-    team_name = models.CharField(max_length=100, blank=True, null=True)
-    team_members = models.TextField(blank=True, null=True, help_text="Comma separated names of members")
+    
+    # Basic Info
     name = models.CharField(max_length=100)
     email = models.EmailField()
     phone = models.CharField(max_length=15)
     college = models.CharField(max_length=200)
+    
+    # Team Info
+    team_name = models.CharField(max_length=100, blank=True, null=True)
+    team_members = models.TextField(blank=True, null=True)
+    
+    # Dynamic Data & Payment
+    custom_responses = models.JSONField(default=dict, blank=True)
+    payment_proof = models.ImageField(upload_to='payment_proofs/', blank=True, null=True)
+    transaction_id = models.CharField(max_length=100, blank=True, null=True)
+    
+    # System Fields
     registered_at = models.DateTimeField(auto_now_add=True)
     attended = models.BooleanField(default=False)
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     certificate = models.FileField(upload_to='certificates/', blank=True, null=True)
     current_round = models.IntegerField(default=1)
     is_winner = models.BooleanField(default=False)
-    rank = models.IntegerField(null=True, blank=True, help_text="1 for 1st Prize, 2 for 2nd, etc.")
+    rank = models.IntegerField(null=True, blank=True)
 
     def __str__(self):
-        return f"{self.team_name or self.name} - {self.event.title}"
+        return f"{self.name} - {self.event.title}"
 
 class Gallery(models.Model):
     title = models.CharField(max_length=100)
