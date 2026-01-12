@@ -16,12 +16,12 @@ router.register(r'fests', FestViewSet)
 router.register(r'feedback', FeedbackViewSet)
 router.register(r'gallery', GalleryViewSet)
 router.register(r'participants', ParticipantViewSet, basename='participants')
-router.register(r'users', UserViewSet) 
+router.register(r'users', UserViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
-    path('api/user/me/', current_user, name='current_user'), 
+    path('api/user/me/', current_user, name='current_user'),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

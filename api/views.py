@@ -15,7 +15,7 @@ from .permissions import IsCoordinatorOrReadOnly
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def current_user(request):
-    """Simple endpoint to check role on frontend load."""
+    """API to check the role of the logged-in user."""
     return Response({
         "id": request.user.id,
         "username": request.user.username,
@@ -23,7 +23,7 @@ def current_user(request):
     })
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    """Allows admins to list users for assigning coordinators."""
+    """For Main Admins to find users to assign as Coordinators."""
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAdminUser]
@@ -43,7 +43,7 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_events(self, request):
-        """Events managed by the logged-in coordinator."""
+        """Returns events for the specific logged-in Coordinator (or all for Superuser)."""
         if request.user.is_superuser:
             events = Event.objects.all()
         else:
@@ -59,7 +59,7 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def dashboard_data(self, request, pk=None):
         event = self.get_object()
-        # RBAC Check
+        # Security: Allow if Superuser OR the assigned Coordinator
         if request.user != event.coordinator and not request.user.is_superuser:
             return Response({"error": "Unauthorized"}, status=403)
 
@@ -78,17 +78,21 @@ class EventViewSet(viewsets.ModelViewSet):
             
         participants = event.registrations.filter(attended=True)
         if not participants.exists():
-            return Response({"error": "No attended participants."}, status=400)
+            return Response({"error": "No attended participants found."}, status=400)
 
         for p in participants:
             buffer = io.BytesIO()
             c = canvas.Canvas(buffer, pagesize=landscape(letter))
             w, h = landscape(letter)
+            
+            # Design
             c.setFont("Helvetica-Bold", 40)
             c.drawCentredString(w/2, h-150, "CERTIFICATE")
             c.setFont("Helvetica", 20)
-            c.drawCentredString(w/2, h-250, f"Awarded to {p.name} for {event.title}")
+            c.drawCentredString(w/2, h-250, f"Awarded to {p.name}")
+            c.drawCentredString(w/2, h-300, f"for {event.title}")
             c.save()
+            
             p.certificate.save(f"cert_{p.id}.pdf", ContentFile(buffer.getvalue()))
             p.save()
             
@@ -101,9 +105,13 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'team_name', 'email']
 
     def get_queryset(self):
-        """Security: Coordinators see ONLY their event participants."""
+        """
+        SECURITY CRITICAL: 
+        - Superusers see ALL participants.
+        - Coordinators see ONLY participants for their events.
+        """
         user = self.request.user
-        if user.is_staff or user.is_superuser:
+        if user.is_superuser:
             return Participant.objects.all().order_by('-registered_at')
         if user.is_authenticated:
             return Participant.objects.filter(event__coordinator=user).order_by('-registered_at')
@@ -117,16 +125,18 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     def promote(self, request):
         ids = request.data.get('ids', [])
         next_round = request.data.get('next_round')
-        Participant.objects.filter(id__in=ids).update(current_round=next_round)
-        return Response({"msg": "Promoted"})
+        # Filter ensures they can only promote their own participants
+        qs = self.get_queryset().filter(id__in=ids)
+        updated = qs.update(current_round=next_round)
+        return Response({"msg": f"Promoted {updated} participants"})
 
     @action(detail=True, methods=['patch'])
     def assign_rank(self, request, pk=None):
-        p = self.get_object()
+        p = self.get_object() # Will raise 404 if not in get_queryset (Security)
         p.rank = request.data.get('rank')
         p.is_winner = True
         p.save()
-        return Response({"status": "Ranked"})
+        return Response({"status": "Rank updated"})
 
 class GalleryViewSet(viewsets.ModelViewSet):
     queryset = Gallery.objects.all().order_by('-uploaded_at')
