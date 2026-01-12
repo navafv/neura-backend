@@ -51,9 +51,8 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def results(self, request, pk=None):
         event = self.get_object()
-        # Only show results if published OR if the requester is the coordinator/admin
+        # Security: Only return data if published OR if admin requesting
         if not event.results_published:
-             # Check permissions if not published
              if not request.user.is_authenticated:
                  return Response({"detail": "Results not yet published"}, status=403)
              if not request.user.is_superuser and request.user != event.coordinator:
@@ -61,6 +60,14 @@ class EventViewSet(viewsets.ModelViewSet):
 
         winners = event.registrations.filter(is_winner=True).order_by('rank')
         return Response(ParticipantSerializer(winners, many=True).data)
+
+    @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny])
+    def qualifiers(self, request, pk=None):
+        """Returns list of participants for public view (No sensitive data)"""
+        event = self.get_object()
+        # Return all participants, frontend can filter by max round
+        participants = event.registrations.all().order_by('-current_round', 'name')
+        return Response(PublicParticipantSerializer(participants, many=True).data)
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def dashboard_data(self, request, pk=None):
@@ -85,12 +92,13 @@ class EventViewSet(viewsets.ModelViewSet):
         response['Content-Disposition'] = f'attachment; filename="{event.title}_registrations.csv"'
 
         writer = csv.writer(response)
-        writer.writerow(['ID', 'Name', 'Team Name', 'Email', 'Phone', 'College', 'Attended', 'Current Round', 'Rank', 'Winner'])
+        writer.writerow(['ID', 'Name', 'Team Name', 'Email', 'Phone', 'College', 'Attended', 'Current Round', 'Rank', 'Winner', 'Payment Ref'])
 
         for p in event.registrations.all():
             writer.writerow([
                 p.id, p.name, p.team_name or "N/A", p.email, p.phone, p.college,
-                "Yes" if p.attended else "No", p.current_round, p.rank or "-", "Yes" if p.is_winner else "No"
+                "Yes" if p.attended else "No", p.current_round, p.rank or "-", "Yes" if p.is_winner else "No",
+                p.transaction_id or "N/A"
             ])
 
         return response
@@ -165,10 +173,6 @@ class EventRoundViewSet(viewsets.ModelViewSet):
     queryset = EventRound.objects.all()
     serializer_class = EventRoundSerializer
     permission_classes = [permissions.IsAuthenticated, IsCoordinatorOrReadOnly]
-
-    def get_queryset(self):
-        # Optional: restrict to coordinator's events if needed, but simple filtering is fine
-        return super().get_queryset()
 
 class GalleryViewSet(viewsets.ModelViewSet):
     queryset = Gallery.objects.all().order_by('-uploaded_at')
