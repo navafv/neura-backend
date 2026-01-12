@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Fest, Event, EventRound, Participant, Gallery, Feedback
+from .models import Fest, Event, EventRound, Participant, Gallery, Feedback, TeamMember
 
 class EventRoundInline(admin.TabularInline):
     model = EventRound
@@ -22,3 +22,4 @@ class ParticipantAdmin(admin.ModelAdmin):
 admin.site.register(Fest)
 admin.site.register(Gallery)
 admin.site.register(Feedback)
+admin.site.register(TeamMember)

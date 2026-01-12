@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from api.views import (
     EventViewSet, FeedbackViewSet, GalleryViewSet, 
-    ParticipantViewSet, FestViewSet, UserViewSet, current_user
+    ParticipantViewSet, FestViewSet, UserViewSet, TeamMemberViewSet, current_user
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
@@ -17,6 +17,7 @@ router.register(r'feedback', FeedbackViewSet)
 router.register(r'gallery', GalleryViewSet)
 router.register(r'participants', ParticipantViewSet, basename='participants')
 router.register(r'users', UserViewSet)
+router.register(r'team', TeamMemberViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),

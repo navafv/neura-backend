@@ -8,14 +8,13 @@ from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import landscape, letter
-from .models import Event, Participant, Gallery, Feedback, Fest
+from .models import Event, Participant, Gallery, Feedback, Fest, TeamMember
 from .serializers import *
 from .permissions import IsCoordinatorOrReadOnly
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def current_user(request):
-    """API to check the role of the logged-in user."""
     return Response({
         "id": request.user.id,
         "username": request.user.username,
@@ -23,7 +22,6 @@ def current_user(request):
     })
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
-    """For Main Admins to find users to assign as Coordinators."""
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [permissions.IsAdminUser]
@@ -43,7 +41,6 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_events(self, request):
-        """Returns events for the specific logged-in Coordinator (or all for Superuser)."""
         if request.user.is_superuser:
             events = Event.objects.all()
         else:
@@ -59,7 +56,6 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def dashboard_data(self, request, pk=None):
         event = self.get_object()
-        # Security: Allow if Superuser OR the assigned Coordinator
         if request.user != event.coordinator and not request.user.is_superuser:
             return Response({"error": "Unauthorized"}, status=403)
 
@@ -84,15 +80,12 @@ class EventViewSet(viewsets.ModelViewSet):
             buffer = io.BytesIO()
             c = canvas.Canvas(buffer, pagesize=landscape(letter))
             w, h = landscape(letter)
-            
-            # Design
             c.setFont("Helvetica-Bold", 40)
             c.drawCentredString(w/2, h-150, "CERTIFICATE")
             c.setFont("Helvetica", 20)
             c.drawCentredString(w/2, h-250, f"Awarded to {p.name}")
             c.drawCentredString(w/2, h-300, f"for {event.title}")
             c.save()
-            
             p.certificate.save(f"cert_{p.id}.pdf", ContentFile(buffer.getvalue()))
             p.save()
             
@@ -105,11 +98,6 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'team_name', 'email']
 
     def get_queryset(self):
-        """
-        SECURITY CRITICAL: 
-        - Superusers see ALL participants.
-        - Coordinators see ONLY participants for their events.
-        """
         user = self.request.user
         if user.is_superuser:
             return Participant.objects.all().order_by('-registered_at')
@@ -125,14 +113,13 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     def promote(self, request):
         ids = request.data.get('ids', [])
         next_round = request.data.get('next_round')
-        # Filter ensures they can only promote their own participants
         qs = self.get_queryset().filter(id__in=ids)
         updated = qs.update(current_round=next_round)
         return Response({"msg": f"Promoted {updated} participants"})
 
     @action(detail=True, methods=['patch'])
     def assign_rank(self, request, pk=None):
-        p = self.get_object() # Will raise 404 if not in get_queryset (Security)
+        p = self.get_object()
         p.rank = request.data.get('rank')
         p.is_winner = True
         p.save()
@@ -147,3 +134,8 @@ class FeedbackViewSet(viewsets.ModelViewSet):
     queryset = Feedback.objects.all()
     serializer_class = FeedbackSerializer
     permission_classes = [permissions.AllowAny]
+
+class TeamMemberViewSet(viewsets.ModelViewSet):
+    queryset = TeamMember.objects.all().order_by('order')
+    serializer_class = TeamMemberSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]

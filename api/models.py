@@ -47,23 +47,16 @@ class EventRound(models.Model):
 
 class Participant(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
-    # Team Details
     team_name = models.CharField(max_length=100, blank=True, null=True)
     team_members = models.TextField(blank=True, null=True, help_text="Comma separated names of members")
-    
-    # Leader / Individual Details
     name = models.CharField(max_length=100)
     email = models.EmailField()
     phone = models.CharField(max_length=15)
     college = models.CharField(max_length=200)
-    
-    # System Fields
     registered_at = models.DateTimeField(auto_now_add=True)
     attended = models.BooleanField(default=False)
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     certificate = models.FileField(upload_to='certificates/', blank=True, null=True)
-    
-    # Round Progression & Results
     current_round = models.IntegerField(default=1)
     is_winner = models.BooleanField(default=False)
     rank = models.IntegerField(null=True, blank=True, help_text="1 for 1st Prize, 2 for 2nd, etc.")
@@ -81,3 +74,15 @@ class Feedback(models.Model):
     email = models.EmailField()
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+
+class TeamMember(models.Model):
+    name = models.CharField(max_length=100)
+    role = models.CharField(max_length=100)
+    image = models.ImageField(upload_to='team/', blank=True, null=True)
+    order = models.IntegerField(default=0, help_text="Lower number appears first")
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"{self.name} - {self.role}"

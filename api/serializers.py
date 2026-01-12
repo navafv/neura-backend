@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.utils import timezone
-from .models import Event, EventRound, Participant, Gallery, Feedback, Fest
+from .models import Event, EventRound, Participant, Gallery, Feedback, Fest, TeamMember
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -53,4 +53,9 @@ class GallerySerializer(serializers.ModelSerializer):
 class FeedbackSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
+        fields = '__all__'
+
+class TeamMemberSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TeamMember
         fields = '__all__'
