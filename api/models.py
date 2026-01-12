@@ -32,7 +32,7 @@ class Event(models.Model):
 
     def __str__(self):
         return self.title
-    
+
 class EventRound(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='rounds')
     round_number = models.IntegerField(default=1)
@@ -63,9 +63,10 @@ class Participant(models.Model):
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     certificate = models.FileField(upload_to='certificates/', blank=True, null=True)
     
-    # Round Progression (0 = Disqualified/Eliminated, 1 = Round 1, 2 = Round 2...)
+    # Round Progression & Results
     current_round = models.IntegerField(default=1)
     is_winner = models.BooleanField(default=False)
+    rank = models.IntegerField(null=True, blank=True, help_text="1 for 1st Prize, 2 for 2nd, etc.")
 
     def __str__(self):
         return f"{self.team_name or self.name} - {self.event.title}"

@@ -1,6 +1,12 @@
 from rest_framework import serializers
+from django.contrib.auth.models import User
 from django.utils import timezone
-from .models import Event, Gallery, Feedback, Participant, EventRound, Fest
+from .models import Event, EventRound, Participant, Gallery, Feedback, Fest
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email']
 
 class EventRoundSerializer(serializers.ModelSerializer):
     class Meta:
@@ -11,6 +17,7 @@ class EventSerializer(serializers.ModelSerializer):
     rounds = EventRoundSerializer(many=True, read_only=True)
     registration_count = serializers.IntegerField(source='registrations.count', read_only=True)
     coordinator_name = serializers.ReadOnlyField(source='coordinator.username')
+    fest_name = serializers.ReadOnlyField(source='fest.name')
 
     class Meta:
         model = Event
@@ -25,23 +32,15 @@ class ParticipantSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         event = data['event']
-        
-        # Check Date
         if timezone.now() >= event.date:
             raise serializers.ValidationError("Registration is closed.")
-        
-        # Check Capacity
         if event.registrations.count() >= event.max_participants:
             raise serializers.ValidationError("Event Full.")
-            
-        # Check Team Logic
         if event.is_team_event and not data.get('team_name'):
-            raise serializers.ValidationError("Team Name is required for this event.")
-            
+            raise serializers.ValidationError("Team Name is required.")
         return data
 
 class FestSerializer(serializers.ModelSerializer):
-    events = EventSerializer(many=True, read_only=True)
     class Meta:
         model = Fest
         fields = '__all__'
