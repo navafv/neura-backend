@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 from django_resized import ResizedImageField
 
 class Fest(models.Model):
-    name = models.CharField(max_length=200, help_text="e.g. 'Intra IT Fest 2026'")
+    name = models.CharField(max_length=200)
     year = models.IntegerField(default=timezone.now().year)
     is_active = models.BooleanField(default=True)
     brochure = models.FileField(upload_to='fest_docs/', blank=True, null=True)
@@ -12,71 +12,50 @@ class Fest(models.Model):
     def __str__(self):
         return f"{self.name} ({self.year})"
 
+class Sponsor(models.Model):
+    TIER_CHOICES = [('Gold', 'Gold'), ('Silver', 'Silver'), ('Bronze', 'Bronze')]
+    fest = models.ForeignKey(Fest, on_delete=models.CASCADE, related_name='sponsors')
+    name = models.CharField(max_length=100)
+    logo = models.ImageField(upload_to='sponsors/')
+    tier = models.CharField(max_length=20, choices=TIER_CHOICES)
+    website = models.URLField(blank=True)
+
 class Event(models.Model):
-    fest = models.ForeignKey(Fest, on_delete=models.CASCADE, related_name='events', null=True, blank=True)
-    coordinator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='coordinated_events')
+    fest = models.ForeignKey(Fest, on_delete=models.CASCADE, related_name='events', null=True)
+    coordinator = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='coordinated_events')
     title = models.CharField(max_length=200)
     description = models.TextField()
     date = models.DateTimeField()
     location = models.CharField(max_length=255, default="Main Auditorium")
     image = ResizedImageField(size=[800, 600], quality=75, upload_to='events/', blank=True, null=True)
-    pdf_resource = models.FileField(upload_to='event_pdfs/', null=True, blank=True)
-    
-    # Team Settings
     is_team_event = models.BooleanField(default=False)
-    min_team_size = models.IntegerField(default=1)
-    max_team_size = models.IntegerField(default=1)
     max_participants = models.PositiveIntegerField(default=100)
-    
-    # Registration Settings
-    registration_deadline = models.DateTimeField(null=True, blank=True)
-    registration_fee = models.IntegerField(default=0, help_text="0 for free events")
-    payment_qr = models.ImageField(upload_to='payment_qrs/', blank=True, null=True)
-    custom_fields = models.JSONField(default=list, blank=True, help_text="List of extra field labels e.g. ['GitHub Link', 'Dietary Pref']")
-
     results_published = models.BooleanField(default=False)
-
-    @property
-    def is_registration_open(self):
-        # Use deadline if set, otherwise use event date
-        cutoff = self.registration_deadline if self.registration_deadline else self.date
-        return timezone.now() < cutoff
 
     def __str__(self):
         return self.title
 
+class Resource(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='resources')
+    title = models.CharField(max_length=100)
+    file = models.FileField(upload_to='resources/')
+
 class EventRound(models.Model):
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='rounds')
     round_number = models.IntegerField(default=1)
-    name = models.CharField(max_length=100, default="Preliminary Round")
-    selection_limit = models.IntegerField(default=10)
+    name = models.CharField(max_length=100)
     
     class Meta:
-        ordering = ['round_number']
-
-    def __str__(self):
-        return f"{self.event.title} - R{self.round_number}: {self.name}"
+        unique_together = ['event', 'round_number']
 
 class Participant(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='registrations')
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='registrations')
-    
-    # Basic Info
     name = models.CharField(max_length=100)
     email = models.EmailField()
     phone = models.CharField(max_length=15)
     college = models.CharField(max_length=200)
-    
-    # Team Info
     team_name = models.CharField(max_length=100, blank=True, null=True)
-    team_members = models.TextField(blank=True, null=True)
-    
-    # Dynamic Data & Payment
-    custom_responses = models.JSONField(default=dict, blank=True)
-    payment_proof = models.ImageField(upload_to='payment_proofs/', blank=True, null=True)
-    transaction_id = models.CharField(max_length=100, blank=True, null=True)
-    
-    # System Fields
-    registered_at = models.DateTimeField(auto_now_add=True)
     attended = models.BooleanField(default=False)
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True, null=True)
     certificate = models.FileField(upload_to='certificates/', blank=True, null=True)
@@ -92,9 +71,17 @@ class Gallery(models.Model):
     image = models.ImageField(upload_to='gallery/')
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+class Score(models.Model):
+    participant = models.ForeignKey(Participant, on_delete=models.CASCADE, related_name='scores')
+    round = models.ForeignKey(EventRound, on_delete=models.CASCADE)
+    judge = models.ForeignKey(User, on_delete=models.CASCADE)
+    marks = models.DecimalField(max_digits=5, decimal_places=2)
+    remarks = models.TextField(blank=True)
+
 class Feedback(models.Model):
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='feedbacks', null=True)
     name = models.CharField(max_length=100)
-    email = models.EmailField()
+    rating = models.IntegerField(default=5)
     message = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -4,7 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 from api.views import (
-    EventViewSet, FeedbackViewSet, GalleryViewSet, 
+    EventViewSet, FeedbackViewSet, GalleryViewSet, ScheduleViewSet,
     ParticipantViewSet, FestViewSet, UserViewSet, TeamMemberViewSet, EventRoundViewSet, current_user
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -14,6 +14,7 @@ router = DefaultRouter()
 router.register(r'events', EventViewSet)
 router.register(r'rounds', EventRoundViewSet)
 router.register(r'fests', FestViewSet)
+router.register(r'schedules', ScheduleViewSet)
 router.register(r'feedback', FeedbackViewSet)
 router.register(r'gallery', GalleryViewSet)
 router.register(r'participants', ParticipantViewSet, basename='participants')

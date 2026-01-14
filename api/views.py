@@ -3,13 +3,14 @@ import csv
 from django.http import HttpResponse
 from django.core.files.base import ContentFile
 from django.contrib.auth.models import User
+from django.template.loader import render_to_string
 from rest_framework import viewsets, permissions, filters
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import landscape, letter
-from .models import Event, Participant, Gallery, Feedback, Fest, TeamMember, EventRound
+from .models import *
 from .serializers import *
 from .permissions import IsCoordinatorOrReadOnly
 
@@ -31,6 +32,13 @@ class FestViewSet(viewsets.ModelViewSet):
     queryset = Fest.objects.all().order_by('-year')
     serializer_class = FestSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+class ScheduleViewSet(viewsets.ModelViewSet):
+    queryset = Schedule.objects.all().order_by('start_time')
+    serializer_class = ScheduleSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['fest']
 
 class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all().order_by('date')
@@ -102,31 +110,48 @@ class EventViewSet(viewsets.ModelViewSet):
             ])
 
         return response
+    
+    @action(detail=True, methods=['get'])
+    def analytics(self, request, pk=None):
+        event = self.get_object()
+        stats = {
+            "total_registrations": event.registrations.count(),
+            "attendance_rate": (event.registrations.filter(attended=True).count() / event.registrations.count() * 100) if event.registrations.exists() else 0,
+            "average_rating": event.feedbacks.aggregate(Avg('rating'))['rating__avg'] or 0,
+            "college_distribution": event.registrations.values('college').annotate(count=Count('id'))
+        }
+        return Response(stats)
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    @action(detail=True, methods=['post'])
     def generate_certificates(self, request, pk=None):
         event = self.get_object()
-        if request.user != event.coordinator and not request.user.is_superuser:
-            return Response({"error": "Unauthorized"}, status=403)
-            
         participants = event.registrations.filter(attended=True)
-        if not participants.exists():
-            return Response({"error": "No attended participants found."}, status=400)
-
+        
         for p in participants:
-            buffer = io.BytesIO()
-            c = canvas.Canvas(buffer, pagesize=landscape(letter))
-            w, h = landscape(letter)
-            c.setFont("Helvetica-Bold", 40)
-            c.drawCentredString(w/2, h-150, "CERTIFICATE")
-            c.setFont("Helvetica", 20)
-            c.drawCentredString(w/2, h-250, f"Awarded to {p.name}")
-            c.drawCentredString(w/2, h-300, f"for {event.title}")
-            c.save()
-            p.certificate.save(f"cert_{p.id}.pdf", ContentFile(buffer.getvalue()))
+            template = 'certificates/participation.html'
+            context = {
+                'participant_name': p.name,
+                'college': p.college,
+                'event_title': event.title,
+                'fest_name': event.fest.name if event.fest else "NEURA",
+                'year': event.date.year,
+                'title': 'Participation',
+                'type_class': 'participation'
+            }
+
+            if p.is_winner:
+                context['title'] = 'Excellence'
+                context['type_class'] = 'excellence'
+                context['rank'] = p.rank
+
+            html = render_to_string(template, context)
+            result = io.BytesIO()
+            pisa.pisaDocument(io.BytesIO(html.encode("UTF-8")), result)
+            
+            p.certificate.save(f"cert_{p.id}.pdf", ContentFile(result.getvalue()))
             p.save()
             
-        return Response({"detail": f"Generated {participants.count()} certificates."})
+        return Response({"detail": "Certificates generated successfully."})
 
 class ParticipantViewSet(viewsets.ModelViewSet):
     serializer_class = ParticipantSerializer
@@ -168,6 +193,14 @@ class ParticipantViewSet(viewsets.ModelViewSet):
         p.attended = not p.attended
         p.save()
         return Response({"status": "Attendance updated", "attended": p.attended})
+    
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        """Dashboard endpoint for participants"""
+        if not request.user.is_authenticated:
+            return Response({"error": "Login required"}, status=401)
+        registrations = Participant.objects.filter(user=request.user)
+        return Response(ParticipantSerializer(registrations, many=True).data)
 
 class EventRoundViewSet(viewsets.ModelViewSet):
     queryset = EventRound.objects.all()

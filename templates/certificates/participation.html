@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Helvetica', sans-serif; text-align: center; color: #333; }
+        .border { border: 15px solid #1a237e; padding: 50px; margin: 20px; border-radius: 10px; }
+        .excellence { border-color: #ffd700; } /* Use this class for Excellence certificates */
+        h1 { font-size: 50px; color: #1a237e; margin-bottom: 0; }
+        h2 { font-size: 25px; margin-top: 5px; }
+        .content { margin: 40px 0; font-size: 20px; line-height: 1.6; }
+        .name { font-size: 35px; font-weight: bold; color: #c62828; text-decoration: underline; }
+        .footer { margin-top: 60px; display: flex; justify-content: space-around; }
+        .sig { border-top: 2px solid #333; width: 200px; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="border {{ type_class }}">
+        <h1>CERTIFICATE</h1>
+        <h2>OF {{ title|upper }}</h2>
+        <div class="content">
+            This is proudly awarded to<br>
+            <span class="name">{{ participant_name }}</span><br>
+            from {{ college }}<br>
+            for his/her active involvement in <strong>{{ event_title }}</strong><br>
+            held during {{ fest_name }} {{ year }}.
+            {% if rank %}
+            <br>Achieving <strong>Rank {{ rank }}</strong> in the final standings.
+            {% endif %}
+        </div>
+        <div class="footer">
+            <div class="sig">Event Coordinator</div>
+            <div class="sig">Principal / Chairman</div>
+        </div>
+    </div>
+</body>
+</html>

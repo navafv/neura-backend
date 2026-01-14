@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from django.utils import timezone
-from .models import Event, EventRound, Participant, Gallery, Feedback, Fest, TeamMember
+from .models import Event, EventRound, Participant, Gallery, Feedback, Fest, TeamMember, Schedule
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -46,7 +45,13 @@ class PublicParticipantSerializer(serializers.ModelSerializer):
         model = Participant
         fields = ['name', 'team_name', 'college', 'current_round', 'is_winner', 'rank']
 
+class ScheduleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Schedule
+        fields = '__all__'
+
 class FestSerializer(serializers.ModelSerializer):
+    schedules = ScheduleSerializer(many=True, read_only=True)
     class Meta:
         model = Fest
         fields = '__all__'

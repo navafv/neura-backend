@@ -1,5 +1,19 @@
 from django.contrib import admin
-from .models import Fest, Event, EventRound, Participant, Gallery, Feedback, TeamMember
+from .models import Fest, Event, EventRound, Participant, Gallery, Feedback, TeamMember, Schedule
+
+class ScheduleInline(admin.TabularInline):
+    model = Schedule
+    extra = 1
+
+@admin.register(Fest)
+class FestAdmin(admin.ModelAdmin):
+    list_display = ('name', 'year', 'is_active')
+    inlines = [ScheduleInline]
+
+@admin.register(Schedule)
+class ScheduleAdmin(admin.ModelAdmin):
+    list_display = ('title', 'fest', 'start_time', 'location')
+    list_filter = ('fest',)
 
 class EventRoundInline(admin.TabularInline):
     model = EventRound
