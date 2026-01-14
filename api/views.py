@@ -1,15 +1,16 @@
 import io
 import csv
+import json
 from django.http import HttpResponse
 from django.core.files.base import ContentFile
 from django.contrib.auth.models import User
 from django.template.loader import render_to_string
+from django.db.models import Count, Avg
 from rest_framework import viewsets, permissions, filters
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import landscape, letter
+from xhtml2pdf import pisa  # REQUIRED: pip install xhtml2pdf
 from .models import *
 from .serializers import *
 from .permissions import IsCoordinatorOrReadOnly
@@ -59,11 +60,13 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def results(self, request, pk=None):
         event = self.get_object()
-        # Security: Only return data if published OR if admin requesting
+        # Security check: Allow if published OR if user is admin/coordinator
         if not event.results_published:
-             if not request.user.is_authenticated:
-                 return Response({"detail": "Results not yet published"}, status=403)
-             if not request.user.is_superuser and request.user != event.coordinator:
+             has_access = (
+                 request.user.is_authenticated and 
+                 (request.user.is_superuser or request.user == event.coordinator)
+             )
+             if not has_access:
                  return Response({"detail": "Results not yet published"}, status=403)
 
         winners = event.registrations.filter(is_winner=True).order_by('rank')
@@ -71,9 +74,7 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny])
     def qualifiers(self, request, pk=None):
-        """Returns list of participants for public view (No sensitive data)"""
         event = self.get_object()
-        # Return all participants, frontend can filter by max round
         participants = event.registrations.all().order_by('-current_round', 'name')
         return Response(PublicParticipantSerializer(participants, many=True).data)
 
@@ -161,9 +162,13 @@ class ParticipantViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if self.action == 'create': # Allow anyone to register
+            return Participant.objects.all()
+            
         if user.is_superuser:
             return Participant.objects.all().order_by('-registered_at')
         if user.is_authenticated:
+            # Coordinators see participants for their events, Users see their own
             return Participant.objects.filter(event__coordinator=user).order_by('-registered_at')
         return Participant.objects.none()
 
@@ -175,7 +180,7 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     def promote(self, request):
         ids = request.data.get('ids', [])
         next_round = request.data.get('next_round')
-        qs = self.get_queryset().filter(id__in=ids)
+        qs = Participant.objects.filter(id__in=ids)
         updated = qs.update(current_round=next_round)
         return Response({"msg": f"Promoted {updated} participants"})
 
@@ -196,9 +201,9 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['get'])
     def me(self, request):
-        """Dashboard endpoint for participants"""
         if not request.user.is_authenticated:
             return Response({"error": "Login required"}, status=401)
+        # Assuming we link participants to Users by email or user field
         registrations = Participant.objects.filter(user=request.user)
         return Response(ParticipantSerializer(registrations, many=True).data)
 

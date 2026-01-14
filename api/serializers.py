@@ -1,3 +1,4 @@
+import json
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Event, EventRound, Participant, Gallery, Feedback, Fest, TeamMember, Schedule
@@ -23,12 +24,32 @@ class EventSerializer(serializers.ModelSerializer):
         model = Event
         fields = '__all__'
 
+    # Handle FormData stringified JSON for custom_fields
+    def to_internal_value(self, data):
+        data = data.copy()
+        if 'custom_fields' in data and isinstance(data['custom_fields'], str):
+            try:
+                data['custom_fields'] = json.loads(data['custom_fields'])
+            except ValueError:
+                data['custom_fields'] = []
+        return super().to_internal_value(data)
+
 class ParticipantSerializer(serializers.ModelSerializer):
     event_title = serializers.ReadOnlyField(source='event.title')
 
     class Meta:
         model = Participant
         fields = '__all__'
+
+    # Handle FormData stringified JSON for custom_responses
+    def to_internal_value(self, data):
+        data = data.copy()
+        if 'custom_responses' in data and isinstance(data['custom_responses'], str):
+            try:
+                data['custom_responses'] = json.loads(data['custom_responses'])
+            except ValueError:
+                data['custom_responses'] = {}
+        return super().to_internal_value(data)
 
     def validate(self, data):
         event = data['event']
@@ -37,7 +58,7 @@ class ParticipantSerializer(serializers.ModelSerializer):
         if event.registrations.count() >= event.max_participants:
             raise serializers.ValidationError("Event Full.")
         if event.is_team_event and not data.get('team_name'):
-            raise serializers.ValidationError("Team Name is required.")
+            raise serializers.ValidationError("Team Name is required for team events.")
         return data
 
 class PublicParticipantSerializer(serializers.ModelSerializer):
