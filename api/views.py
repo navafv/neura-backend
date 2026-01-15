@@ -1,5 +1,6 @@
 import io
 import csv
+import re
 from django.http import HttpResponse
 from django.core.files.base import ContentFile
 from django.contrib.auth.models import User
@@ -12,13 +13,26 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django_filters.rest_framework import DjangoFilterBackend
 from xhtml2pdf import pisa 
-from .models import *
-from .serializers import *
+
+# Explicit imports to avoid namespace pollution
+from .models import (
+    Fest, Event, EventRound, Participant, Gallery, 
+    Feedback, TeamMember, Schedule
+)
+from .serializers import (
+    UserSerializer, FestSerializer, ScheduleSerializer, 
+    EventSerializer, ParticipantSerializer, PublicParticipantSerializer, 
+    EventRoundSerializer, GallerySerializer, FeedbackSerializer, 
+    TeamMemberSerializer
+)
 from .permissions import IsCoordinatorOrReadOnly
 
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def current_user(request):
+    """
+    Returns the currently logged-in user's details and coordinator status.
+    """
     is_coordinator = Event.objects.filter(coordinator=request.user).exists()
     
     return Response({
@@ -56,6 +70,9 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_events(self, request):
+        """
+        Returns events managed by the current coordinator.
+        """
         if request.user.is_superuser:
             events = Event.objects.all()
         else:
@@ -64,6 +81,9 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def results(self, request, pk=None):
+        """
+        Returns winners. Public if published, restricted otherwise.
+        """
         event = self.get_object()
         # Security: Only show results if published, or if user is admin/coordinator
         if not event.results_published:
@@ -79,13 +99,18 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny])
     def qualifiers(self, request, pk=None):
+        """
+        Public leaderboard/status for ongoing rounds.
+        """
         event = self.get_object()
-        # Public data for leaderboard/status
         participants = event.registrations.all().order_by('-current_round', 'name')
         return Response(PublicParticipantSerializer(participants, many=True).data)
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def dashboard_data(self, request, pk=None):
+        """
+        Analytics for the event coordinator.
+        """
         event = self.get_object()
         if request.user != event.coordinator and not request.user.is_superuser:
             return Response({"error": "Unauthorized"}, status=403)
@@ -99,6 +124,9 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def export_registrations(self, request, pk=None):
+        """
+        Export participant data as CSV.
+        """
         event = self.get_object()
         if request.user != event.coordinator and not request.user.is_superuser:
             return Response({"error": "Unauthorized"}, status=403)
@@ -131,34 +159,57 @@ class EventViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def generate_certificates(self, request, pk=None):
+        """
+        Generates PDF certificates for all attended participants.
+        """
         event = self.get_object()
+        if request.user != event.coordinator and not request.user.is_superuser:
+            return Response({"error": "Unauthorized"}, status=403)
+
         participants = event.registrations.filter(attended=True)
         
+        generated_count = 0
+        errors = []
+
         for p in participants:
-            template = 'certificates/participation.html'
-            context = {
-                'participant_name': p.name,
-                'college': p.college,
-                'event_title': event.title,
-                'fest_name': event.fest.name if event.fest else "NEURA",
-                'year': event.date.year,
-                'title': 'Participation',
-                'type_class': 'participation'
-            }
+            try:
+                template = 'certificates/participation.html'
+                context = {
+                    'participant_name': p.name,
+                    'college': p.college,
+                    'event_title': event.title,
+                    'fest_name': event.fest.name if event.fest else "NEURA",
+                    'year': event.date.year,
+                    'title': 'Participation',
+                    'type_class': 'participation'
+                }
 
-            if p.is_winner:
-                context['title'] = 'Excellence'
-                context['type_class'] = 'excellence'
-                context['rank'] = p.rank
+                if p.is_winner:
+                    context['title'] = 'Excellence'
+                    context['type_class'] = 'excellence'
+                    context['rank'] = p.rank
 
-            html = render_to_string(template, context)
-            result = io.BytesIO()
-            pisa.pisaDocument(io.BytesIO(html.encode("UTF-8")), result)
+                html = render_to_string(template, context)
+                result = io.BytesIO()
+                
+                # Generate PDF
+                pdf = pisa.pisaDocument(io.BytesIO(html.encode("UTF-8")), result)
+                
+                if not pdf.err:
+                    # Save file without triggering another save signal immediately if possible
+                    p.certificate.save(f"cert_{p.id}.pdf", ContentFile(result.getvalue()), save=False)
+                    p.save(update_fields=['certificate'])
+                    generated_count += 1
+                else:
+                    errors.append(f"Error generating for {p.name}")
+
+            except Exception as e:
+                errors.append(f"Exception for {p.name}: {str(e)}")
             
-            p.certificate.save(f"cert_{p.id}.pdf", ContentFile(result.getvalue()))
-            p.save()
-            
-        return Response({"detail": "Certificates generated successfully."})
+        return Response({
+            "detail": f"Generated {generated_count} certificates.",
+            "errors": errors
+        })
 
 class ParticipantViewSet(viewsets.ModelViewSet):
     serializer_class = ParticipantSerializer
@@ -168,7 +219,7 @@ class ParticipantViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if self.action == 'create': # Allow anyone to register
+        if self.action in ['create', 'scan_qr']: # Allow open access for specific actions if needed, or handle in permissions
             return Participant.objects.all()
             
         if user.is_superuser:
@@ -179,12 +230,16 @@ class ParticipantViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action == 'create': return [permissions.AllowAny()]
+        if self.action == 'scan_qr': return [permissions.IsAuthenticated()] # Only admins/coordinators scan
         return [permissions.IsAuthenticated()]
 
     @action(detail=False, methods=['post'])
     def promote(self, request):
         ids = request.data.get('ids', [])
         next_round = request.data.get('next_round')
+        if not ids or not next_round:
+            return Response({"error": "IDs and next_round required"}, status=400)
+            
         qs = Participant.objects.filter(id__in=ids)
         updated = qs.update(current_round=next_round)
         return Response({"msg": f"Promoted {updated} participants"})
@@ -204,6 +259,40 @@ class ParticipantViewSet(viewsets.ModelViewSet):
         p.save()
         return Response({"status": "Attendance updated", "attended": p.attended})
     
+    @action(detail=False, methods=['post'])
+    def scan_qr(self, request):
+        """
+        Parses QR data string and marks attendance.
+        Format expected: "ID:123|Name:John|..."
+        """
+        qr_data = request.data.get('qr_data')
+        if not qr_data:
+            return Response({"error": "No QR data provided"}, status=400)
+        
+        # Extract ID using Regex
+        match = re.search(r'ID:(\d+)', qr_data)
+        if not match:
+            return Response({"error": "Invalid QR Format"}, status=400)
+        
+        participant_id = match.group(1)
+        
+        try:
+            participant = Participant.objects.get(id=participant_id)
+            
+            # Permission check: Does current user manage this event?
+            if not request.user.is_superuser and participant.event.coordinator != request.user:
+                return Response({"error": "You are not the coordinator for this event"}, status=403)
+                
+            participant.attended = True
+            participant.save()
+            return Response({
+                "status": "success", 
+                "message": f"Marked present: {participant.name}",
+                "participant": ParticipantSerializer(participant).data
+            })
+        except Participant.DoesNotExist:
+            return Response({"error": "Participant not found"}, status=404)
+
     @action(detail=False, methods=['get'])
     def me(self, request):
         if not request.user.is_authenticated:
@@ -241,34 +330,33 @@ class StudentLoginView(APIView):
             return Response({"error": "Please provide Email or Phone number"}, status=400)
 
         # 1. Find the participant
-        # Check if credential matches email OR phone
         participants = Participant.objects.filter(
             Q(email__iexact=credential) | Q(phone=credential)
         )
         
         if not participants.exists():
             return Response({"error": "No registration found. Please register for an event first."}, status=404)
+        
+        # TODO: IMPLEMENT OTP VERIFICATION HERE
+        # Currently, this is a security risk as anyone with the email can login.
+        # For production: Send OTP to `credential` -> Verify OTP -> Proceed.
             
-        # 2. Get the primary participant record (in case of multiple registrations)
+        # 2. Get the primary participant record
         participant = participants.first()
         
         # 3. Get or Create a Django User for this participant
         user = participant.user
         
         if not user:
-            # If no user exists yet, create one using their email
             username = participant.email
-            
-            # Handle case where User exists but isn't linked to Participant yet
             if User.objects.filter(username=username).exists():
                 user = User.objects.get(username=username)
             else:
                 user = User.objects.create_user(username=username, email=participant.email)
-                user.set_unusable_password() # Students login via OTP/Magic link logic (simulated here by direct login)
+                user.set_unusable_password() 
                 user.save()
             
-            # Link ALL this student's registrations to this new user
-            # (Matches by email to catch multiple event registrations)
+            # Self-healing: Link ALL this student's registrations to this user
             Participant.objects.filter(email=participant.email).update(user=user)
 
         # 4. Generate JWT Token

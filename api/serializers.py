@@ -24,8 +24,8 @@ class EventSerializer(serializers.ModelSerializer):
         model = Event
         fields = '__all__'
 
-    # Converts stringified JSON from FormData back to Python Dict
     def to_internal_value(self, data):
+        # Create a mutable copy of the data if it's immutable (like QueryDict)
         data = data.copy()
         if 'custom_fields' in data and isinstance(data['custom_fields'], str):
             try:
@@ -41,7 +41,6 @@ class ParticipantSerializer(serializers.ModelSerializer):
         model = Participant
         fields = '__all__'
 
-    # Converts stringified JSON from FormData back to Python Dict
     def to_internal_value(self, data):
         data = data.copy()
         if 'custom_responses' in data and isinstance(data['custom_responses'], str):
@@ -52,13 +51,23 @@ class ParticipantSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
     def validate(self, data):
-        event = data['event']
-        if not event.is_registration_open:
-            raise serializers.ValidationError("Registration is closed for this event.")
-        if event.registrations.count() >= event.max_participants:
-            raise serializers.ValidationError("Event Full.")
-        if event.is_team_event and not data.get('team_name'):
-            raise serializers.ValidationError("Team Name is required for team events.")
+        event = data.get('event')
+        
+        # In update operations, event might not be in data, so fetch from instance if needed
+        if not event and self.instance:
+            event = self.instance.event
+
+        if event:
+            # Check registration only on creation
+            if not self.instance:
+                if not event.is_registration_open:
+                    raise serializers.ValidationError("Registration is closed for this event.")
+                if event.registrations.count() >= event.max_participants:
+                    raise serializers.ValidationError("Event Full.")
+            
+            if event.is_team_event and not data.get('team_name') and (not self.instance or not self.instance.team_name):
+                 raise serializers.ValidationError("Team Name is required for team events.")
+
         return data
 
 class PublicParticipantSerializer(serializers.ModelSerializer):
