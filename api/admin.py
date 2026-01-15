@@ -33,7 +33,6 @@ class ParticipantAdmin(admin.ModelAdmin):
     list_filter = ('event', 'current_round', 'attended')
     search_fields = ('name', 'email', 'team_name')
 
-admin.site.register(Fest)
 admin.site.register(Gallery)
 admin.site.register(Feedback)
 admin.site.register(TeamMember)
