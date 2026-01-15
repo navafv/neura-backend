@@ -1,16 +1,17 @@
 import io
 import csv
-import json
 from django.http import HttpResponse
 from django.core.files.base import ContentFile
 from django.contrib.auth.models import User
 from django.template.loader import render_to_string
-from django.db.models import Count, Avg
+from django.db.models import Count, Avg, Q
 from rest_framework import viewsets, permissions, filters
+from rest_framework.views import APIView
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 from django_filters.rest_framework import DjangoFilterBackend
-from xhtml2pdf import pisa  # REQUIRED: pip install xhtml2pdf
+from xhtml2pdf import pisa 
 from .models import *
 from .serializers import *
 from .permissions import IsCoordinatorOrReadOnly
@@ -18,10 +19,14 @@ from .permissions import IsCoordinatorOrReadOnly
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def current_user(request):
+    is_coordinator = Event.objects.filter(coordinator=request.user).exists()
+    
     return Response({
         "id": request.user.id,
         "username": request.user.username,
-        "is_superuser": request.user.is_superuser
+        "email": request.user.email,
+        "is_superuser": request.user.is_superuser,
+        "is_coordinator": is_coordinator
     })
 
 class UserViewSet(viewsets.ReadOnlyModelViewSet):
@@ -60,7 +65,7 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def results(self, request, pk=None):
         event = self.get_object()
-        # Security check: Allow if published OR if user is admin/coordinator
+        # Security: Only show results if published, or if user is admin/coordinator
         if not event.results_published:
              has_access = (
                  request.user.is_authenticated and 
@@ -75,6 +80,7 @@ class EventViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny])
     def qualifiers(self, request, pk=None):
         event = self.get_object()
+        # Public data for leaderboard/status
         participants = event.registrations.all().order_by('-current_round', 'name')
         return Response(PublicParticipantSerializer(participants, many=True).data)
 
@@ -168,7 +174,6 @@ class ParticipantViewSet(viewsets.ModelViewSet):
         if user.is_superuser:
             return Participant.objects.all().order_by('-registered_at')
         if user.is_authenticated:
-            # Coordinators see participants for their events, Users see their own
             return Participant.objects.filter(event__coordinator=user).order_by('-registered_at')
         return Participant.objects.none()
 
@@ -203,7 +208,6 @@ class ParticipantViewSet(viewsets.ModelViewSet):
     def me(self, request):
         if not request.user.is_authenticated:
             return Response({"error": "Login required"}, status=401)
-        # Assuming we link participants to Users by email or user field
         registrations = Participant.objects.filter(user=request.user)
         return Response(ParticipantSerializer(registrations, many=True).data)
 
@@ -226,3 +230,57 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
     queryset = TeamMember.objects.all().order_by('order')
     serializer_class = TeamMemberSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+class StudentLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        credential = request.data.get('credential')  # Can be email or phone
+        
+        if not credential:
+            return Response({"error": "Please provide Email or Phone number"}, status=400)
+
+        # 1. Find the participant
+        # Check if credential matches email OR phone
+        participants = Participant.objects.filter(
+            Q(email__iexact=credential) | Q(phone=credential)
+        )
+        
+        if not participants.exists():
+            return Response({"error": "No registration found. Please register for an event first."}, status=404)
+            
+        # 2. Get the primary participant record (in case of multiple registrations)
+        participant = participants.first()
+        
+        # 3. Get or Create a Django User for this participant
+        user = participant.user
+        
+        if not user:
+            # If no user exists yet, create one using their email
+            username = participant.email
+            
+            # Handle case where User exists but isn't linked to Participant yet
+            if User.objects.filter(username=username).exists():
+                user = User.objects.get(username=username)
+            else:
+                user = User.objects.create_user(username=username, email=participant.email)
+                user.set_unusable_password() # Students login via OTP/Magic link logic (simulated here by direct login)
+                user.save()
+            
+            # Link ALL this student's registrations to this new user
+            # (Matches by email to catch multiple event registrations)
+            Participant.objects.filter(email=participant.email).update(user=user)
+
+        # 4. Generate JWT Token
+        refresh = RefreshToken.for_user(user)
+        
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_superuser': user.is_superuser
+            }
+        })

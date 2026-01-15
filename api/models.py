@@ -35,7 +35,6 @@ class Event(models.Model):
     def is_registration_open(self):
         if self.registration_deadline:
             return timezone.now() < self.registration_deadline
-        # If no deadline set, default to open until event start
         return timezone.now() < self.date
 
     def __str__(self):

@@ -24,7 +24,7 @@ class EventSerializer(serializers.ModelSerializer):
         model = Event
         fields = '__all__'
 
-    # Handle FormData stringified JSON for custom_fields
+    # Converts stringified JSON from FormData back to Python Dict
     def to_internal_value(self, data):
         data = data.copy()
         if 'custom_fields' in data and isinstance(data['custom_fields'], str):
@@ -41,7 +41,7 @@ class ParticipantSerializer(serializers.ModelSerializer):
         model = Participant
         fields = '__all__'
 
-    # Handle FormData stringified JSON for custom_responses
+    # Converts stringified JSON from FormData back to Python Dict
     def to_internal_value(self, data):
         data = data.copy()
         if 'custom_responses' in data and isinstance(data['custom_responses'], str):
