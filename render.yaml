@@ -1,0 +1,24 @@
+databases:
+  - name: neura-db
+    plan: free
+    databaseName: neura
+    user: neura
+
+services:
+  - type: web
+    name: neura-backend
+    runtime: python
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: neura-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: WEB_CONCURRENCY
+        value: 4
+      - key: PYTHON_VERSION
+        value: 3.12.0

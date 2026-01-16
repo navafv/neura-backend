@@ -1,0 +1,15 @@
+django>=5.0
+djangorestframework
+django-cors-headers
+django-filter
+django-resized
+drf-spectacular
+xhtml2pdf
+qrcode
+Pillow
+gunicorn
+psycopg2-binary
+dj-database-url
+python-dotenv
+whitenoise
+djangorestframework-simplejwt
