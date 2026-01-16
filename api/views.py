@@ -1,12 +1,14 @@
 import io
 import csv
 import re
+import random
+import string
 from django.http import HttpResponse
 from django.core.files.base import ContentFile
 from django.contrib.auth.models import User
 from django.template.loader import render_to_string
-from django.db.models import Count, Avg, Q
-from rest_framework import viewsets, permissions, filters
+from django.db.models import Count, Avg, Q, Sum
+from rest_framework import viewsets, permissions, filters, status
 from rest_framework.views import APIView
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
@@ -68,6 +70,37 @@ class EventViewSet(viewsets.ModelViewSet):
     filterset_fields = ['fest', 'is_team_event']
     search_fields = ['title']
 
+    def create(self, request, *args, **kwargs):
+        # Custom creation logic to auto-generate coordinator user
+        data = request.data.copy()
+        
+        # If no coordinator is selected, auto-create one
+        if not data.get('coordinator'):
+            # Generate a username based on title (e.g., "coding_coord")
+            base_name = ''.join(e for e in data.get('title', 'event') if e.isalnum()).lower()
+            username = f"{base_name}_coord"
+            password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+            
+            # Ensure unique username
+            counter = 1
+            original_username = username
+            while User.objects.filter(username=username).exists():
+                username = f"{original_username}{counter}"
+                counter += 1
+            
+            user = User.objects.create_user(username=username, password=password, email=f"{username}@neura.com")
+            data['coordinator'] = user.id
+            
+            # We will return credentials in the response header or body for the admin to see
+            response = super().create(request, *args, **kwargs)
+            response.data['auto_created_user'] = {
+                'username': username,
+                'password': password
+            }
+            return response
+            
+        return super().create(request, *args, **kwargs)
+
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_events(self, request):
         """
@@ -105,6 +138,47 @@ class EventViewSet(viewsets.ModelViewSet):
         event = self.get_object()
         participants = event.registrations.all().order_by('-current_round', 'name')
         return Response(PublicParticipantSerializer(participants, many=True).data)
+    
+    @action(detail=True, methods=['get'], permission_classes=[permissions.AllowAny])
+    def eligible_students(self, request, pk=None):
+        """
+        Returns students eligible for the CURRENT round (not eliminated).
+        Assuming round 1 is start, anyone with current_round > 1 is 'promoted'.
+        Or returns all for admin to filter.
+        """
+        event = self.get_object()
+        # For public view, maybe only show those who passed round 1?
+        # For now, let's return students sorted by round descending
+        participants = event.registrations.filter(current_round__gt=1).order_by('-current_round', 'name')
+        return Response(PublicParticipantSerializer(participants, many=True).data)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.AllowAny])
+    def college_leaderboard(self, request):
+        """
+        Aggregates points by college.
+        Rank 1 = 10 pts, Rank 2 = 5 pts, Rank 3 = 3 pts (Custom logic)
+        """
+        # Logic: Iterate all winners and sum points for their college
+        colleges = {}
+        winners = Participant.objects.filter(is_winner=True)
+        
+        for p in winners:
+            points = 0
+            if p.rank == 1: points = 10
+            elif p.rank == 2: points = 5
+            elif p.rank == 3: points = 3
+            
+            # Normalize college name
+            college_name = p.college.strip().title()
+            if college_name in colleges:
+                colleges[college_name] += points
+            else:
+                colleges[college_name] = points
+        
+        # Sort by points desc
+        sorted_colleges = sorted(colleges.items(), key=lambda x: x[1], reverse=True)
+        data = [{"college": name, "points": pts} for name, pts in sorted_colleges]
+        return Response(data)
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def dashboard_data(self, request, pk=None):
