@@ -8,17 +8,25 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', os.getenv('SECRET_KEY', 'django-insecure-fallback-key'))
 
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = 'RENDER' not in os.environ
 
-# Allow Render's hostnames
 ALLOWED_HOSTS = []
 RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+    
+ALLOWED_HOSTS.append('.onrender.com')
+ALLOWED_HOSTS.append('localhost')
+ALLOWED_HOSTS.append('127.0.0.1')
+
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS = [
+        f'https://{RENDER_EXTERNAL_HOSTNAME}',
+    ]
+else:
+    CSRF_TRUSTED_ORIGINS = ['https://*.onrender.com']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -37,7 +45,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', # Required for static files on Render
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -65,7 +73,7 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
-CORS_ALLOW_ALL_ORIGINS = True 
+CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'config.urls'
 
@@ -86,8 +94,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-# Database
-# Render provides DATABASE_URL automatically
 if os.getenv('DATABASE_URL'):
     DATABASES = {
         'default': dj_database_url.config(default=os.getenv('DATABASE_URL'), conn_max_age=600)
@@ -112,7 +118,6 @@ TIME_ZONE = 'Asia/Kolkata'
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
@@ -120,5 +125,4 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-# Limits for file uploads
-DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880 # 5 MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880
